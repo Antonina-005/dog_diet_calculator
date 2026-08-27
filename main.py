@@ -4,9 +4,12 @@ import math
 
 print("=== КАЛЬКУЛЯТОР ПИТАНИЯ ДЛЯ СОБАК ===")
 
-# --- 1. НАСТРОЙКИ КАЛОРИЙНОСТИ КОРМОВ (ккал / 100г) ---
+# --- 1. ГЛОБАЛЬНЫЕ КОНСТАНТЫ И ВЕТЕРИНАРНЫЕ ЛИМИТЫ ---
 DEFAULT_DRY_KCAL = 350.0
 DEFAULT_WET_KCAL = 90.0
+MAX_DOG_WEIGHT = 100.0       # Максимальный разумный вес собаки (в кг)
+MIN_PORTION_RATIO = 0.9      # Минимально допустимый коэффициент порции
+MAX_PORTION_RATIO = 2.0      # Безопасный потолок порции для взрослых собак
 
 # --- 2. СБОР РАСШИРЕННЫХ ДАННЫХ ---
 dog_name = input("Как зовут вашу собаку?: ").strip().capitalize()
@@ -34,7 +37,7 @@ if dog_gender == "сука":
             break
         print("Ошибка: введите цифру 1, 2 или 3.")
 
-# Проверка здоровья собаки
+# Проверка здоровья
 while True:
     has_illness = input(
         f"\nУ {dog_name} есть хронические болезни? (да/нет): "
@@ -43,7 +46,7 @@ while True:
         break
     print("Ошибка: введите строго 'да' или 'нет'.")
 
-# Выбор статуса стерилизации/кастрации
+# Статус стерилизации
 is_castrated = "нет"
 if pregnancy_status == "1":
     status_text = "стерилизована" if dog_gender == "сука" else "кастрирован"
@@ -55,10 +58,10 @@ if pregnancy_status == "1":
             break
         print("Ошибка: введите строго 'да' или 'нет'.")
 
-# Выбор уровня активности
+# Уровень активности
 print(f"\n--- Уровень активности {dog_name} ---")
 print("1. Низкая (диванный режим, короткие прогулки)")
-print("2. Умеренная (стандартный выгул дважды в день)")
+print("2. Умеренная (standard-выгул дважды в день)")
 print("3. Высокая (активные игры, бег, тренировки)")
 while True:
     activity_choice = input("Выберите вариант (1, 2 или 3): ").strip()
@@ -66,7 +69,7 @@ while True:
         break
     print("Ошибка: введите цифру 1, 2 или 3.")
 
-# Выбор типа шерсти
+# Тип шерсти
 print(f"\n--- Тип шерсти {dog_name} ---")
 print("1. Обычная шерсть (короткая или длинная)")
 print("2. Голая собака (нет шерсти, повышенный метаболизм)")
@@ -76,7 +79,7 @@ while True:
         break
     print("Ошибка: введите цифру 1 или 2.")
 
-# Выбор времени года
+# Время года
 print("\n--- Выберите текущее время года ---")
 print("1. Зима / Холодная осень (нужен обогрев)")
 print("2. Лето / Жара (сниженная активность)")
@@ -99,7 +102,7 @@ while True:
     except ValueError:
         print("Ошибка: возраст должен быть числом. Пример: 3 или 0.5")
 
-# Запрашиваем вес
+# Запрашиваем вес с валидацией границ
 while True:
     try:
         current_weight = float(
@@ -108,15 +111,25 @@ while True:
         ideal_weight = float(
             input(f"Введите ИДЕАЛЬНЫЙ вес {dog_name} (в кг): ").strip()
         )
-        if current_weight > 0 and ideal_weight > 0:
-            break
-        print("Ошибка: вес должен быть больше нуля!")
+        if current_weight <= 0 or ideal_weight <= 0:
+            print("Ошибка: вес должен быть больше нуля!")
+            continue
+        if current_weight > MAX_DOG_WEIGHT or ideal_weight > MAX_DOG_WEIGHT:
+            print(f"Ошибка: вес превышает лимит {MAX_DOG_WEIGHT} кг. ")
+            print("Пожалуйста, проверьте введённые данные.")
+            continue
+        break
     except ValueError:
         print("Ошибка: пожалуйста, вводите только числа через точку.")
 
 
 # --- 3. АНАЛИЗ СТАТУСА ВЕСА И СТАБИЛИЗАЦИЯ ---
 diff_percent = ((current_weight - ideal_weight) / ideal_weight) * 100
+
+# Флаг предупреждения о странном весе
+weight_warning = False
+if abs(diff_percent) > 50.0:
+    weight_warning = True
 
 if dog_age < 1.0:
     weight_status = "активный рост (щенок)"
@@ -160,13 +173,13 @@ elif pregnancy_status == "3":
 
 # Корректировки только для небеременных взрослых/пожилых
 if pregnancy_status == "1" and dog_age >= 1.0:
-    # 1. Корректировка на активность
+    # 1. Активность
     if activity_choice == "1":
         coef -= 0.15
     elif activity_choice == "3":
         coef += 0.20
 
-    # 2. Корректировка на отсутствие шерсти
+    # 2. Шерсть
     if coat_choice == "2":
         coef += 0.20
         advice += (
@@ -174,20 +187,25 @@ if pregnancy_status == "1" and dog_age >= 1.0:
             "постоянный термообогрев."
         )
 
-    # 3. Корректировка на сезон
+    # 3. Сезон (с разрешением конфликта)
     if season_choice == "1":
-        coef += 0.15
+        winter_bonus = 0.07 if weight_status == "избыточный вес" else 0.15
+        coef += winter_bonus
         advice += " ❄️ Учтена зимняя надбавка на обогрев."
     elif season_choice == "2":
         coef -= 0.10
         advice += " ☀️ Порция уменьшена из-за летней жары."
 
+# Двусторонняя защита коэффициента
+limit_max = (
+    3.5 if (dog_age < 1.0 or pregnancy_status == "3")
+    else MAX_PORTION_RATIO
+)
+coef = max(MIN_PORTION_RATIO, coef)
+coef = min(limit_max, coef)
+
 
 # --- 4. РАСЧЕТ СУТОЧНОЙ ПОРЦИИ, ВОДЫ И ГРАФИКА ---
-# Защита от слишком сильного урезания коэффициента в минимуме
-if coef < 0.9:
-    coef = 0.9
-
 rer = 70 * math.pow(current_weight, 0.75)
 total_kcal_needed = rer * coef
 
@@ -196,7 +214,6 @@ dry_grams = int(kcal_per_meal / (DEFAULT_DRY_KCAL / 100))
 wet_grams = int(kcal_per_meal / (DEFAULT_WET_KCAL / 100))
 water_ml = int(current_weight * 55)
 
-# График кормления
 if dog_age < 0.4 or pregnancy_status == "3":
     meals_count = 4
     schedule = "08:00 | 12:00 | 16:00 | 20:00 (дробное питание)"
@@ -221,6 +238,12 @@ print(f" Статус состояния: {weight_status.upper()}")
 print(f" Рекомендация: {advice}")
 print("==========================================")
 
+if weight_warning:
+    print(" ⚠️ ВНИМАНИЕ: Разница между текущим и идеальным")
+    print(f" весом составляет {abs(int(diff_percent))}%! Пожалуйста, ")
+    print(" убедитесь, что вы правильно указали идеальный вес.")
+    print("==========================================")
+
 if has_illness == "да":
     print(" 🛑 ВНИМАНИЕ: У собаки есть хронические болезни.")
     print(" Расчет является базовым! При заболеваниях ЖКТ, почек")
@@ -239,8 +262,12 @@ print(f" Рекомендуемые часы: {schedule}")
 
 if meals_count > 2:
     single_dry = int(dry_grams / (meals_count - 1))
-    print(f" На заметку: делите сухой корм по {single_dry}г на первые приемы,")
-    print(f" а влажный корм {wet_grams}г давайте в финальное вечернее время.")
+    print(
+        f" На заметку: делите сухой корм по {single_dry}г на первые приемы,"
+    )
+    print(
+        f" а влажный корм {wet_grams}г давайте в финальное вечернее время."
+    )
 
 print("==========================================")
 print("💡 ДОПОЛНИТЕЛЬНЫЕ СОВЕТЫ ПО КОРМЛЕНИЮ:")
@@ -259,16 +286,4 @@ elif activity_choice == "3":
         "отдыха после еды во избежание заворота кишок."
     )
 elif coat_choice == "2" and season_choice == "1":
-    print(
-        " 2. Одевайте голую собаку на зимние прогулки, "
-        "чтобы она не мерзла."
-    )
-elif season_choice == "2":
-    print(
-        " 2. В жару берите на прогулку дорожную поилку "
-        "и чаще меняйте воду."
-    )
-else:
-    print(" 2. Наливайте свежую фильтрованную воду дважды в день.")
-
-print("==========================================\n")
+    print("==========================================\n")
