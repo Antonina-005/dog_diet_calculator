@@ -21,15 +21,6 @@ while True:
         break
     print("Ошибка: введите строго 'кобель' или 'сука'.")
 
-# Проверка здоровья собаки
-while True:
-    has_illness = input(
-        f"У {dog_name} есть хронические болезни? (да/нет): "
-    ).strip().lower()
-    if has_illness in ["да", "нет"]:
-        break
-    print("Ошибка: введите строго 'да' или 'нет'.")
-
 # Выбор особого статуса для сук
 pregnancy_status = "1"
 if dog_gender == "сука":
@@ -43,6 +34,15 @@ if dog_gender == "сука":
             break
         print("Ошибка: введите цифру 1, 2 или 3.")
 
+# Проверка здоровья собаки
+while True:
+    has_illness = input(
+        f"\nУ {dog_name} есть хронические болезни? (да/нет): "
+    ).strip().lower()
+    if has_illness in ["да", "нет"]:
+        break
+    print("Ошибка: введите строго 'да' или 'нет'.")
+
 # Выбор статуса стерилизации/кастрации
 is_castrated = "нет"
 if pregnancy_status == "1":
@@ -54,6 +54,17 @@ if pregnancy_status == "1":
         if is_castrated in ["да", "нет"]:
             break
         print("Ошибка: введите строго 'да' или 'нет'.")
+
+# Выбор уровня активности
+print(f"\n--- Уровень активности {dog_name} ---")
+print("1. Низкая (диванный режим, короткие прогулки)")
+print("2. Умеренная (стандартный выгул дважды в день)")
+print("3. Высокая (активные игры, бег, тренировки)")
+while True:
+    activity_choice = input("Выберите вариант (1, 2 или 3): ").strip()
+    if activity_choice in ["1", "2", "3"]:
+        break
+    print("Ошибка: введите цифру 1, 2 или 3.")
 
 # Выбор типа шерсти
 print(f"\n--- Тип шерсти {dog_name} ---")
@@ -147,11 +158,23 @@ elif pregnancy_status == "3":
     weight_status = "лактация (выкармливание)"
     advice = "🍼 Максимальный рацион для кормящей мамы. Еда без ограничений!"
 
-if coat_choice == "2" and pregnancy_status == "1" and dog_age >= 1.0:
-    coef += 0.20
-    advice += " 🐕 Голая собака: добавлена энергия на постоянный термообогрев."
-
+# Корректировки только для небеременных взрослых/пожилых
 if pregnancy_status == "1" and dog_age >= 1.0:
+    # 1. Корректировка на активность
+    if activity_choice == "1":
+        coef -= 0.15
+    elif activity_choice == "3":
+        coef += 0.20
+
+    # 2. Корректировка на отсутствие шерсти
+    if coat_choice == "2":
+        coef += 0.20
+        advice += (
+            " 🐕 Голая собака: добавлена энергия на "
+            "постоянный термообогрев."
+        )
+
+    # 3. Корректировка на сезон
     if season_choice == "1":
         coef += 0.15
         advice += " ❄️ Учтена зимняя надбавка на обогрев."
@@ -161,6 +184,10 @@ if pregnancy_status == "1" and dog_age >= 1.0:
 
 
 # --- 4. РАСЧЕТ СУТОЧНОЙ ПОРЦИИ, ВОДЫ И ГРАФИКА ---
+# Защита от слишком сильного урезания коэффициента в минимуме
+if coef < 0.9:
+    coef = 0.9
+
 rer = 70 * math.pow(current_weight, 0.75)
 total_kcal_needed = rer * coef
 
@@ -169,6 +196,7 @@ dry_grams = int(kcal_per_meal / (DEFAULT_DRY_KCAL / 100))
 wet_grams = int(kcal_per_meal / (DEFAULT_WET_KCAL / 100))
 water_ml = int(current_weight * 55)
 
+# График кормления
 if dog_age < 0.4 or pregnancy_status == "3":
     meals_count = 4
     schedule = "08:00 | 12:00 | 16:00 | 20:00 (дробное питание)"
@@ -193,7 +221,6 @@ print(f" Статус состояния: {weight_status.upper()}")
 print(f" Рекомендация: {advice}")
 print("==========================================")
 
-# Вывод важного медицинского предупреждения
 if has_illness == "да":
     print(" 🛑 ВНИМАНИЕ: У собаки есть хронические болезни.")
     print(" Расчет является базовым! При заболеваниях ЖКТ, почек")
@@ -225,6 +252,11 @@ elif is_castrated == "да" and weight_status == "избыточный вес":
     print(
         " 2. После стерилизации метаболизм снижен. "
         "Строго взвешивайте порции на весах."
+    )
+elif activity_choice == "3":
+    print(
+        " 2. У собаки высокая активность. Увеличьте время "
+        "отдыха после еды во избежание заворота кишок."
     )
 elif coat_choice == "2" and season_choice == "1":
     print(
