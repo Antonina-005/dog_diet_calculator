@@ -11,7 +11,68 @@ MAX_DOG_WEIGHT = 100.0       # Максимальный разумный вес 
 MIN_PORTION_RATIO = 0.9      # Минимально допустимый коэффициент порции
 MAX_PORTION_RATIO = 2.0      # Безопасный потолок порции для взрослых собак
 
-# --- 2. СБОР РАСШИРЕННЫХ ДАННЫХ ---
+
+# --- 2. ФУНКЦИЯ-ГЕНЕРАТОР ЗАБОТЛИВОГО UX-ВЕРДИКТА ---
+def generate_human_verdict(coef, base_coef, name, factors):
+    """Генерирует честный человеческий вердикт на основе расчетов."""
+    # 1. Считаем абсолютную разницу со стандартной собакой (база = 1.0)
+    abs_diff = int((coef - 1.0) * 100)
+
+    # 2. Автоматически вычисляем чистую сумму всех штрафов
+    total_penalties = 0.0
+    for val in factors.values():
+        # Базовый коэффициент не является штрафом, отсекаем его
+        if val < 0 and val != base_coef:
+            total_penalties += val
+
+    penalty_percent = abs(int(total_penalties * 100))
+
+    # 3. Формируем текст в зависимости от ситуации
+    if coef in [2.0, 3.5]:
+        return (
+            f"💝 Сейчас у {name} особый мамин статус! Порция увеличена "
+            f"максимально, чтобы малыши росли здоровыми."
+        )
+
+    verdict = (
+        f"✨ Относительно базовой потребности покоя {name} нужно на "
+        f"{abs_diff}% больше еды, чем 'условной идеальной' собаке. "
+    )
+    if penalty_percent > 0:
+        verdict += (
+            f"При этом из-за лишнего веса, дивана или жары мы урезали "
+            f"её норму на {penalty_percent}%, но особенности породы "
+            f"и организма частично компенсировали это!"
+        )
+    return verdict
+
+
+# --- 3. ВЕТЕРИНАРНЫЕ ТАБЛИЦЫ КОНФИГУРАЦИИ ---
+BASE_DIETS = {
+    "сука_пожилой_да": (1.0, "Пожилой возраст + стерилизация"),
+    "сука_пожилой_нет": (1.2, "Пожилой возраст (сниженный метаболизм)"),
+    "кобель_пожилой_да": (1.1, "Пожилой возраст + кастрация"),
+    "кобель_пожилой_нет": (1.4, "Пожилой возраст (сниженный метаболизм)"),
+    "сука_взрослый_да": (1.3, "Взрослая стерилизованная собака"),
+    "сука_взрослый_нет": (1.5, "Взрослая стандартная собака"),
+    "кобель_взрослый_да": (1.4, "Взрослый кастрированный кобель"),
+    "кобель_взрослый_нет": (1.6, "Взрослый стандартный кобель"),
+}
+
+FACTOR_MODIFIERS = {
+    "activity_1": (-0.15, "Низкая активность (диванный режим)"),
+    "activity_3": (0.20, "Высокая активность (тренировки)"),
+    "coat_2": (0.20, "Голая порода (постоянный термообогрев)"),
+    "season_2": (-0.10, "Летняя жара (снижение порции)"),
+}
+
+SPECIAL_STATUSES = {
+    "2": (2.0, "🍼 Вторая половина беременности"),
+    "3": (3.5, "🍼 Период лактации (выкармливание)"),
+}
+
+
+# --- 4. СБОР ДАННЫХ ---
 dog_name = input("Как зовут вашу собаку?: ").strip().capitalize()
 dog_breed = input(f"Укажите породу {dog_name}: ").strip().capitalize()
 
@@ -123,89 +184,102 @@ while True:
         print("Ошибка: пожалуйста, вводите только числа через точку.")
 
 
-# --- 3. АНАЛИЗ СТАТУСА ВЕСА И СТАБИЛИЗАЦИЯ ---
+# --- 5. ДВИЖОК АВТОМАТИЧЕСКОГО РАСЧЕТА ---
 diff_percent = ((current_weight - ideal_weight) / ideal_weight) * 100
 
-# Флаг предупреждения о странном весе
 weight_warning = False
 if abs(diff_percent) > 50.0:
     weight_warning = True
 
+applied_factors = {}
+age_group = "пожилой" if dog_age >= 7.0 else "взрослый"
+
 if dog_age < 1.0:
     weight_status = "активный рост (щенок)"
-    coef = 2.5
-    advice = "✅ Повышенная калорийность для правильного развития щенка."
-elif dog_age >= 7.0:
-    weight_status = "пожилой возраст"
-    if is_castrated == "да":
-        coef = 1.0 if dog_gender == "сука" else 1.1
-    else:
-        coef = 1.2 if dog_gender == "сука" else 1.4
-    advice = "⚠️ Метаболизм замедлен. Порция снижена во избежание ожирения."
+    base_coef = 2.5
+    applied_factors["Рост щенка (базовый коэффициент)"] = 2.5
 else:
-    if is_castrated == "да":
-        base_coef = 1.3 if dog_gender == "сука" else 1.4
+    diet_key = f"{dog_gender}_{age_group}_{is_castrated}"
+    base_coef, description = BASE_DIETS[diet_key]
+    applied_factors[description] = base_coef
+
+    if pregnancy_status == "1":
+        if diff_percent > 10.0:
+            weight_status = "избыточный вес"
+            coef_change = -0.2
+            applied_factors["Избыточный вес (диета для похудения)"] = (
+                coef_change
+            )
+        elif diff_percent < -10.0:
+            weight_status = "дефицит веса"
+            coef_change = 0.2
+            applied_factors["Дефицит веса (диета для набора)"] = coef_change
+        else:
+            weight_status = "идеальный баланс"
+            applied_factors["Идеальный баланс веса (норма)"] = 0.0
     else:
-        base_coef = 1.5 if dog_gender == "сука" else 1.6
+        weight_status = "особый репродуктивный статус"
 
-    if diff_percent > 10.0:
-        weight_status = "избыточный вес"
-        coef = base_coef - 0.2
-        advice = "⚠️ Порция снижена для плавного похудения до идеального веса."
-    elif diff_percent < -10.0:
-        weight_status = "дефицит веса"
-        coef = base_coef + 0.2
-        advice = "⚠️ Порция увеличена для безопасного набора мышечной массы."
-    else:
-        weight_status = "идеальный баланс"
-        coef = base_coef
-        advice = "✅ Отличный вес! Нагрузка рассчитана на поддержание формы."
+coef = base_coef
 
-# --- КОРРЕКТИРОВКА НА ОСОБЫЕ ФАКТОРЫ ---
-if pregnancy_status == "2":
-    coef = 2.0
-    weight_status = "беременность (особый статус)"
-    advice = "🍼 Особый рацион для беременной суки (поддержка плодов)."
-elif pregnancy_status == "3":
-    coef = 3.5
-    weight_status = "лактация (выкармливание)"
-    advice = "🍼 Максимальный рацион для кормящей мамы. Еда без ограничений!"
-
-# Корректировки только для небеременных взрослых/пожилых
+# Корректировки только для небеременных взрослых
 if pregnancy_status == "1" and dog_age >= 1.0:
-    # 1. Активность
-    if activity_choice == "1":
-        coef -= 0.15
-    elif activity_choice == "3":
-        coef += 0.20
+    if diff_percent > 10.0:
+        coef -= 0.2
+    elif diff_percent < -10.0:
+        coef += 0.2
 
-    # 2. Шерсть
-    if coat_choice == "2":
-        coef += 0.20
-        advice += (
-            " 🐕 Голая собака: добавлена энергия на "
-            "постоянный термообогрев."
-        )
+    active_key = f"activity_{activity_choice}"
+    coat_key = f"coat_{coat_choice}"
+    season_key = f"season_{season_choice}"
 
-    # 3. Сезон (с разрешением конфликта)
+    if active_key in FACTOR_MODIFIERS:
+        val, desc = FACTOR_MODIFIERS[active_key]
+        coef += val
+        applied_factors[desc] = val
+
+    if coat_key in FACTOR_MODIFIERS:
+        val, desc = FACTOR_MODIFIERS[coat_key]
+        coef += val
+        applied_factors[desc] = val
+
     if season_choice == "1":
         winter_bonus = 0.07 if weight_status == "избыточный вес" else 0.15
         coef += winter_bonus
-        advice += " ❄️ Учтена зимняя надбавка на обогрев."
-    elif season_choice == "2":
-        coef -= 0.10
-        advice += " ☀️ Порция уменьшена из-за летней жары."
+        applied_factors["Зимний период (надбавка на мороз)"] = winter_bonus
+    elif season_key in FACTOR_MODIFIERS:
+        val, desc = FACTOR_MODIFIERS[season_key]
+        coef += val
+        applied_factors[desc] = val
 
-# Двусторонняя защита коэффициента
+if pregnancy_status in SPECIAL_STATUSES:
+    coef, description = SPECIAL_STATUSES[pregnancy_status]
+    applied_factors = {description: coef}
+
 limit_max = (
     3.5 if (dog_age < 1.0 or pregnancy_status == "3")
     else MAX_PORTION_RATIO
 )
+
+if coef < MIN_PORTION_RATIO:
+    applied_factors["🔒 Ограничение: ветеринарный минимум"] = (
+        MIN_PORTION_RATIO - coef
+    )
+elif coef > limit_max:
+    applied_factors["🔒 Ограничение: безопасный потолок"] = (
+        limit_max - coef
+    )
+
 coef = max(MIN_PORTION_RATIO, coef)
 coef = min(limit_max, coef)
 
+# Вызываем функцию-генератор заботливого вердикта
+human_verdict = generate_human_verdict(
+    coef, base_coef, dog_name, applied_factors
+)
 
-# --- 4. РАСЧЕТ СУТОЧНОЙ ПОРЦИИ, ВОДЫ И ГРАФИКА ---
+
+# --- 6. РАСЧЕТ СУТОЧНОЙ ПОРЦИИ, ВОДЫ И ГРАФИКА ---
 rer = 70 * math.pow(current_weight, 0.75)
 total_kcal_needed = rer * coef
 
@@ -226,16 +300,35 @@ else:
         "08:00 утром и 20:00 вечером "
         "(идеальный интервал 12 часов)"
     )
-
-
-# --- 5. ВЫВОД КРАСИВОГО СУТОЧНОГО ОТЧЕТА ---
+# --- 7. ВЫВОД СУТОЧНОГО ОТЧЕТА ---
 print("\n==========================================")
 print(f" ВЕТЕРИНАРНЫЙ ОТЧЕТ ДЛЯ: {dog_name.upper()}")
 print(f" Порода: {dog_breed} | Пол: {dog_gender}")
 if is_castrated == "да":
     print(" Особый статус: СТЕРИЛИЗОВАНА/КАСТРИРОВАНА")
 print(f" Статус состояния: {weight_status.upper()}")
-print(f" Рекомендация: {advice}")
+print(f" Итоговый коэффициент метаболизма (MER): {round(coef, 2)}")
+print("==========================================")
+print("💬 ЗАБОТЛИВЫЙ ВЕРДИКТ КАЛЬКУЛЯТОРА:")
+print(human_verdict)
+print("==========================================")
+print("🔍 ПОЧЕМУ НАЗНАЧЕНА ИМЕННО ТАКАЯ ПОРЦИЯ:")
+
+for factor_name, factor_value in applied_factors.items():
+    if factor_value == 0.0:
+        print(f" • {factor_name}")
+    elif factor_value > 0 and not factor_name.startswith("🔒"):
+        if (
+            "базовый" in factor_name
+            or "собака" in factor_name
+            or "кобель" in factor_name
+        ):
+            print(f" • {factor_name}: {factor_value}")
+        else:
+            print(f" • {factor_name}: +{factor_value}")
+    else:
+        print(f" • {factor_name}: {round(factor_value, 2)}")
+
 print("==========================================")
 
 if weight_warning:
@@ -252,9 +345,9 @@ if has_illness == "да":
     print("==========================================")
 
 print("📋 РЕКОМЕНДУЕМЫЙ СУТОЧНЫЙ РАЦИОН:")
-print(f" ☀️ УТРО (Сухой корм): {dry_grams} грамм всего")
-print(f" 🌙 ВЕЧЕР (Влажный корм): {wet_grams} грамм всего")
-print(f" 💧 МИНИМУМ ВОДЫ В СУТКИ: {water_ml} мл")
+print(f" ☀️ УТРО (Сухой корм): {dry_grams} gramm всего")
+print(f" 🌙 ВЕЧЕР (Влажный корм): {wet_grams} gramm всего")
+print(f" 💧 МИНИМУМ ВОДЫ В СУТКИ: {water_ml} ml")
 print("==========================================")
 print("⏱️ РЕЖИМ И ГРАФИК КОРМЛЕНИЯ:")
 print(f" Количество кормлений в сутки: {meals_count}")
@@ -269,21 +362,40 @@ if meals_count > 2:
         f" а влажный корм {wet_grams}г давайте в финальное вечернее время."
     )
 
-print("==========================================")
-print("💡 ДОПОЛНИТЕЛЬНЫЕ СОВЕТЫ ПО КОРМЛЕНИЮ:")
-print(" 1. Не смешивайте сухой и влажный корм в один прием пищи.")
+# --- ДИНАМИЧЕСКИЙ ФИЛЬТР СОВЕТОВ ПО КОРМЛЕНИЮ ---
+applied_tips = ["Не смешивайте сухой и влажный корм в один прием пищи."]
 
 if has_illness == "да":
-    print(" 2. Строго соблюдайте диету, назначенную вашим лечащим врачом.")
-elif is_castrated == "да" and weight_status == "избыточный вес":
-    print(
-        " 2. После стерилизации метаболизм снижен. "
-        "Строго взвешивайте порции на весах."
+    applied_tips.append(
+        "Строго соблюдайте лечебную диету, назначенную ветеринаром."
     )
-elif activity_choice == "3":
-    print(
-        " 2. У собаки высокая активность. Увеличьте время "
-        "отдыха после еды во избежание заворота кишок."
-    )
-elif coat_choice == "2" and season_choice == "1":
-    print("==========================================\n")
+else:
+    if is_castrated == "да" and weight_status == "избыточный вес":
+        applied_tips.append(
+            "После стерилизации метаболизм снижен. "
+            "Строго взвешивайте порции на весах."
+        )
+    if activity_choice == "3":
+        applied_tips.append(
+            "У собаки высокая активность. Увеличьте время "
+            "отдыха после еды во избежание заворота кишок."
+        )
+    if coat_choice == "2" and season_choice == "1":
+        applied_tips.append(
+            "Одевайте голую собаку на зимние прогулки, чтобы она не мерзла."
+        )
+    if season_choice == "2":
+        applied_tips.append(
+            "В жару берите на прогулку дорожную поилку и чаще меняйте воду."
+        )
+    if len(applied_tips) == 1:
+        applied_tips.append(
+            "Наливайте свежую фильтрованную "
+            "воду дважды в день."
+        )
+
+print("==========================================")
+print("💡 ПЕРСОНАЛЬНЫЕ СОВЕТЫ ПО КОРМЛЕНИЮ:")
+for i, tip in enumerate(applied_tips, 1):
+    print(f" {i}. {tip}")
+print("==========================================\n")
